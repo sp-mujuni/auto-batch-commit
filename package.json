@@ -1,82 +1,45 @@
 {
   "name": "auto-batch-commit",
   "displayName": "Auto Batch Commit",
-  "description": "Pick several changed files in Source Control and commit them together with one message.",
-  "version": "0.1.0",
-  "publisher": "sp-mujuni",
+  "description": "Commit each changed file as its own commit with an auto-generated message, then sync with GitHub.",
+  "version": "0.2.0",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/sp-mujuni/auto-batch-commit.git"
   },
-  "engines": {
-    "vscode": "^1.85.0"
+  "bin": {
+    "auto-batch-commit": "./out/cli.js",
+    "abc": "./out/cli.js"
   },
-  "categories": [
-    "SCM Providers"
+  "main": "./out/cli.js",
+  "files": [
+    "out",
+    "README.md",
+    "LICENSE"
   ],
+  "engines": {
+    "node": ">=18"
+  },
   "keywords": [
     "git",
     "commit",
-    "batch",
-    "scm",
-    "source control"
+    "auto-commit",
+    "cli",
+    "github",
+    "per-file"
   ],
-  "activationEvents": [],
-  "main": "./out/extension.js",
-  "extensionDependencies": [
-    "vscode.git"
-  ],
-  "contributes": {
-    "commands": [
-      {
-        "command": "autoBatchCommit.commitFiles",
-        "title": "Commit Selected Files...",
-        "category": "Batch Commit",
-        "icon": "$(checklist)"
-      },
-      {
-        "command": "autoBatchCommit.commitAll",
-        "title": "Commit All Changes...",
-        "category": "Batch Commit",
-        "icon": "$(check-all)"
-      }
-    ],
-    "menus": {
-      "scm/title": [
-        {
-          "command": "autoBatchCommit.commitFiles",
-          "when": "scmProvider == git",
-          "group": "navigation@10"
-        },
-        {
-          "command": "autoBatchCommit.commitAll",
-          "when": "scmProvider == git",
-          "group": "navigation@11"
-        }
-      ]
-    },
-    "configuration": {
-      "title": "Auto Batch Commit",
-      "properties": {
-        "autoBatchCommit.pushAfterCommit": {
-          "type": "boolean",
-          "default": false,
-          "description": "Push automatically after every batch commit. When disabled, the success notification offers a Push action."
-        }
-      }
-    }
-  },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p .",
+    "clean": "node scripts/clean.js",
+    "compile": "npm run clean && tsc -p .",
     "watch": "tsc -w -p .",
     "lint": "tsc -p . --noEmit",
-    "test": "npm run compile && node --test test/changes.test.js test/extension.test.js test/git.test.js"
+    "prepare": "npm run compile",
+    "commit": "node out/cli.js",
+    "test": "npm run compile && node --test test/changes.test.js test/message.test.js test/git.test.js test/cli.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
-    "@types/vscode": "^1.85.0",
     "typescript": "^5.9.2"
   }
 }

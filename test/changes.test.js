@@ -1,112 +1,66 @@
 const assert = require('node:assert/strict');
-const path = require('node:path');
 const test = require('node:test');
 
-const { collectBatchFiles, statusLabel } = require('../out/changes.js');
-const { Status } = require('../out/types.js');
+const { describeKind, displayPath, parseStatus } = require('../out/changes.js');
 
-const root = path.resolve(path.sep === '\\' ? 'C:\\repo' : '/repo');
-const at = (...parts) => path.join(root, ...parts);
-const uri = fsPath => ({ scheme: 'file', fsPath });
+test('parses modified, renamed, untracked, deleted, and added entries', () => {
+	const output = [
+		' M b.txt',
+		'R  renamed.txt',
+		'a.txt',
+		'?? c.txt',
+		' D d.txt',
+		'!! ignored.log',
+		'A  e.txt',
+		''
+	].join('\0');
 
-function change(fsPath, status, options = {}) {
-	return {
-		uri: uri(fsPath),
-		originalUri: options.originalUri ?? uri(fsPath),
-		renameUri: options.renameUri,
-		status
-	};
-}
-
-function repository(state) {
-	return {
-		rootUri: uri(root),
-		inputBox: { value: '' },
-		state: {
-			HEAD: undefined,
-			indexChanges: [],
-			workingTreeChanges: [],
-			untrackedChanges: [],
-			...state
-		},
-		status: async () => undefined,
-		push: async () => undefined
-	};
-}
-
-test('merges staged and working tree changes into one entry per file', () => {
-	const repo = repository({
-		indexChanges: [change(at('a.txt'), Status.INDEX_MODIFIED)],
-		workingTreeChanges: [
-			change(at('a.txt'), Status.MODIFIED),
-			change(at('b.txt'), Status.UNTRACKED)
-		],
-		untrackedChanges: [change(at('b.txt'), Status.UNTRACKED)]
-	});
-
-	assert.deepEqual(collectBatchFiles(repo), [
+	assert.deepEqual(parseStatus(output), [
+		{ path: 'b.txt', oldPath: undefined, kind: 'modified', indexStatus: ' ', worktreeStatus: 'M', paths: ['b.txt'] },
+		{ path: 'c.txt', oldPath: undefined, kind: 'untracked', indexStatus: '?', worktreeStatus: '?', paths: ['c.txt'] },
+		{ path: 'd.txt', oldPath: undefined, kind: 'deleted', indexStatus: ' ', worktreeStatus: 'D', paths: ['d.txt'] },
+		{ path: 'e.txt', oldPath: undefined, kind: 'added', indexStatus: 'A', worktreeStatus: ' ', paths: ['e.txt'] },
 		{
-			key: at('a.txt'),
-			label: 'a.txt',
-			repoPaths: ['a.txt'],
-			statuses: ['Staged, modified', 'Modified'],
-			staged: true
-		},
-		{
-			key: at('b.txt'),
-			label: 'b.txt',
-			repoPaths: ['b.txt'],
-			statuses: ['Untracked'],
-			staged: false
+			path: 'renamed.txt',
+			oldPath: 'a.txt',
+			kind: 'renamed',
+			indexStatus: 'R',
+			worktreeStatus: ' ',
+			paths: ['a.txt', 'renamed.txt']
 		}
 	]);
 });
 
-test('includes the old path for renamed files', () => {
-	// VS Code's Git API reports uri = new path, originalUri = old path, renameUri = new path.
-	const repo = repository({
-		indexChanges: [
-			change(at('new.txt'), Status.INDEX_RENAMED, {
-				originalUri: uri(at('old.txt')),
-				renameUri: uri(at('new.txt'))
-			})
-		]
-	});
+test('keeps both paths for copies', () => {
+	const [change] = parseStatus('C  copy.txt\0source.txt\0');
 
-	const [file] = collectBatchFiles(repo);
-	assert.equal(file.label, 'new.txt');
-	assert.deepEqual(file.repoPaths.sort(), ['new.txt', 'old.txt']);
+	assert.equal(change.kind, 'copied');
+	assert.equal(change.path, 'copy.txt');
+	assert.equal(change.oldPath, 'source.txt');
+	assert.deepEqual(change.paths, ['source.txt', 'copy.txt']);
 });
 
-test('sorts files by path and ignores changes outside the repository', () => {
-	const outside = path.join(path.dirname(root), 'outside.txt');
-	const repo = repository({
-		workingTreeChanges: [
-			change(at('z.txt'), Status.MODIFIED),
-			change(at('a.txt'), Status.MODIFIED),
-			change(outside, Status.MODIFIED)
-		]
-	});
+test('parses paths containing spaces', () => {
+	const [change] = parseStatus('?? folder/a file.txt\0');
 
-	assert.deepEqual(
-		collectBatchFiles(repo).map(file => file.label),
-		['a.txt', 'z.txt']
+	assert.equal(change.path, 'folder/a file.txt');
+	assert.equal(change.kind, 'untracked');
+});
+
+test('returns no changes for empty status output', () => {
+	assert.deepEqual(parseStatus(''), []);
+});
+
+test('describes and displays changes', () => {
+	assert.equal(describeKind('untracked'), 'added');
+	assert.equal(describeKind('modified'), 'modified');
+	assert.equal(describeKind('deleted'), 'deleted');
+	assert.equal(
+		displayPath({ path: 'new.txt', oldPath: 'old.txt', kind: 'renamed', indexStatus: 'R', worktreeStatus: ' ', paths: [] }),
+		'old.txt -> new.txt'
 	);
-});
-
-test('status values match the VS Code Git API order', () => {
-	assert.equal(Status.INTENT_TO_ADD, 9);
-	assert.equal(Status.INTENT_TO_RENAME, 10);
-	assert.equal(Status.TYPE_CHANGED, 11);
-	assert.equal(Status.ADDED_BY_US, 12);
-	assert.equal(Status.BOTH_MODIFIED, 18);
-});
-
-test('returns a friendly label for every known status', () => {
-	assert.equal(statusLabel(Status.INDEX_RENAMED), 'Staged, renamed');
-	assert.equal(statusLabel(Status.DELETED), 'Deleted');
-	assert.equal(statusLabel(Status.INTENT_TO_RENAME), 'Intent to rename');
-	assert.equal(statusLabel(Status.TYPE_CHANGED), 'Type changed');
-	assert.equal(statusLabel(Status.BOTH_MODIFIED), 'Modified by both');
-	assert.equal(statusLabel(999), 'Changed');
+	assert.equal(
+		displayPath({ path: 'a.txt', kind: 'modified', indexStatus: ' ', worktreeStatus: 'M', paths: [] }),
+		'a.txt'
+	);
 });
